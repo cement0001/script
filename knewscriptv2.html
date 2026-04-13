@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NewScript Keyboard Input Tool</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:sans-serif;background:#f5f5f5;color:#111;padding:2rem}
+  h1{font-size:20px;font-weight:500;margin-bottom:1.5rem;color:#111}
+  #toolbar{display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap}
+  label{font-size:13px;color:#555}
+  input[type=text]{font-size:14px;padding:6px 10px;border:1px solid #ccc;border-radius:6px;background:#fff;color:#111;outline:none}
+  input[type=text]:focus{border-color:#888}
+  input[type=range]{width:80px}
+  #font-size-out{font-size:13px;color:#555;min-width:36px}
+  #editor{width:100%;min-height:200px;font-size:24px;padding:12px;border:1px solid #ccc;border-radius:8px;background:#fff;color:#111;resize:vertical;outline:none;line-height:1.6}
+  #editor:focus{border-color:#888}
+  #status{font-size:12px;color:#888;margin-top:6px;min-height:16px}
+  button{font-size:13px;padding:6px 14px;border:1px solid #ccc;border-radius:6px;background:#fff;color:#111;cursor:pointer}
+  button:hover{background:#eee}
+  #map-table{margin-top:1rem;font-size:12px;border:1px solid #ddd;border-radius:8px;overflow:hidden;display:none}
+  #map-table table{width:100%;border-collapse:collapse}
+  #map-table td,#map-table th{padding:4px 10px;border-bottom:1px solid #eee;color:#555}
+  #map-table th{background:#f0f0f0;color:#111;font-weight:500}
+  #map-table tr:last-child td{border-bottom:none}
+  @media(prefers-color-scheme:dark){
+    body{background:#1a1a1a;color:#eee}
+    h1{color:#eee}
+    label{color:#aaa}
+    input[type=text]{background:#2a2a2a;border-color:#444;color:#eee}
+    #editor{background:#2a2a2a;border-color:#444;color:#eee}
+    button{background:#2a2a2a;border-color:#444;color:#eee}
+    button:hover{background:#333}
+    #status{color:#888}
+    #font-size-out{color:#aaa}
+    #map-table{border-color:#333}
+    #map-table td,#map-table th{border-bottom-color:#333;color:#aaa}
+    #map-table th{background:#2a2a2a;color:#eee}
+  }
+</style>
+</head>
+<body>
+<h1>NewScript keyboard input tool</h1>
+<div id="toolbar">
+  <label for="font-input">Font name:</label>
+  <input type="text" id="font-input" placeholder="e.g. MyScript" value="serif">
+  <label for="font-size-slider">Size:</label>
+  <input type="range" id="font-size-slider" min="10" max="72" value="24" step="1">
+  <span id="font-size-out">24px</span>
+  <button id="map-toggle">show key map</button>
+  <button id="copy-btn">copy text</button>
+  <button id="clear-btn">clear</button>
+</div>
+<textarea id="editor" placeholder="Start typing... use backtick after a letter for its variant" spellcheck="false"></textarea>
+<div id="status"></div>
+<div id="map-table">
+  <table id="map-table-inner"></table>
+</div>
+
+<script>
+const basicMap = {
+  'A':'E000','B':'E001','C':'E002','D':'E003','E':'E004','F':'E005','G':'E006','H':'E007',
+  'I':'E008','J':'E009','K':'E00A','L':'E00B','M':'E00C','N':'E00D','O':'E00E','P':'E00F',
+  'Q':'E04D',
+  'R':'E010','S':'E011','T':'E012','U':'E013','V':'E014','W':'E015','X':'E016','Y':'E017','Z':'E018',
+  'a':'E019','b':'E01A','c':'E01B','d':'E01C','e':'E01D','f':'E01E','g':'E01F','h':'E020',
+  'i':'E021','j':'E022','k':'E023','l':'E024','m':'E025','n':'E026','o':'E027','p':'E028',
+  'q':'E060',
+  'r':'E029','s':'E02A','t':'E02B','u':'E02C','v':'E02D','w':'E02E','x':'E02F','y':'E030','z':'E031'
+};
+
+const backtickMap = {
+  'A':'E046','B':'E04F','C':'E04C','D':'E047','E':'E03F','H':'E045','I':'E043','J':'E04A',
+  'L':'E049','N':'E04E','O':'E044','Q':'E048','R':'E040','S':'E050','T':'E041','U':'E042',
+  'W':'E03E','Z':'E04B',
+  'a':'E059','b':'E062','c':'E05F','d':'E05A','e':'E052','h':'E058','i':'E056','j':'E05D',
+  'l':'E05C','n':'E061','o':'E057','q':'E05B','r':'E053','s':'E063','t':'E054','u':'E055',
+  'w':'E051','z':'E05E'
+};
+
+function toChar(hex){ return String.fromCodePoint(parseInt(hex,16)); }
+
+const editor = document.getElementById('editor');
+const status = document.getElementById('status');
+const fontInput = document.getElementById('font-input');
+const mapTable = document.getElementById('map-table');
+const slider = document.getElementById('font-size-slider');
+const sizeOut = document.getElementById('font-size-out');
+let mapVisible = false;
+let pendingKey = null;
+
+fontInput.addEventListener('input', () => {
+  editor.style.fontFamily = fontInput.value || 'serif';
+});
+editor.style.fontFamily = 'serif';
+
+slider.addEventListener('input', () => {
+  const sz = slider.value;
+  editor.style.fontSize = sz + 'px';
+  sizeOut.textContent = sz + 'px';
+});
+
+editor.addEventListener('keydown', (e) => {
+  if(['Backspace','Delete','ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)){
+    pendingKey = null; return;
+  }
+  if(e.key === '`'){
+    e.preventDefault();
+    if(pendingKey !== null){
+      const mapped = backtickMap[pendingKey];
+      if(mapped){
+        const pos = editor.selectionStart;
+        const val = editor.value;
+        editor.value = val.slice(0, pos-1) + toChar(mapped) + val.slice(pos);
+        editor.selectionStart = editor.selectionEnd = pos;
+        status.textContent = 'backtick variant: U+' + mapped + ' for key "' + pendingKey + '"';
+      } else {
+        status.textContent = 'no backtick variant for "' + pendingKey + '"';
+      }
+      pendingKey = null;
+    } else {
+      status.textContent = 'type a letter first, then backtick';
+    }
+    return;
+  }
+  if(e.key.length === 1 && !e.ctrlKey && !e.metaKey){
+    const mapped = basicMap[e.key];
+    if(mapped){
+      e.preventDefault();
+      const pos = editor.selectionStart;
+      const val = editor.value;
+      editor.value = val.slice(0, pos) + toChar(mapped) + val.slice(editor.selectionEnd);
+      editor.selectionStart = editor.selectionEnd = pos + 1;
+      pendingKey = e.key;
+      status.textContent = 'U+' + mapped + ' (key: ' + e.key + ') — type backtick to convert';
+      return;
+    } else {
+      pendingKey = null;
+      status.textContent = '';
+    }
+  }
+});
+
+document.getElementById('copy-btn').addEventListener('click', () => {
+  navigator.clipboard.writeText(editor.value).then(() => {
+    status.textContent = 'copied to clipboard!';
+    setTimeout(() => { status.textContent = ''; }, 2000);
+  });
+});
+
+document.getElementById('clear-btn').addEventListener('click', () => {
+  editor.value = ''; pendingKey = null; status.textContent = '';
+});
+
+document.getElementById('map-toggle').addEventListener('click', () => {
+  mapVisible = !mapVisible;
+  mapTable.style.display = mapVisible ? 'block' : 'none';
+  document.getElementById('map-toggle').textContent = mapVisible ? 'hide key map' : 'show key map';
+  if(mapVisible){ buildMapTable(); }
+});
+
+function buildMapTable(){
+  const t = document.getElementById('map-table-inner');
+  t.innerHTML = '<tr><th>key</th><th>→ U+</th><th>key+` →</th><th>key</th><th>→ U+</th><th>key+` →</th></tr>';
+  const keys = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'.split('');
+  const half = Math.ceil(keys.length / 2);
+  for(let i = 0; i < half; i++){
+    const k1 = keys[i], k2 = keys[i + half];
+    const tr = document.createElement('tr');
+    function makeCells(k){
+      const td1 = document.createElement('td'); td1.textContent = k || '';
+      const td2 = document.createElement('td'); td2.textContent = k && basicMap[k] ? 'U+' + basicMap[k] : '—';
+      const td3 = document.createElement('td'); td3.textContent = k && backtickMap[k] ? 'U+' + backtickMap[k] : '—';
+      return [td1, td2, td3];
+    }
+    makeCells(k1).forEach(td => tr.appendChild(td));
+    makeCells(k2 || '').forEach(td => tr.appendChild(td));
+    t.appendChild(tr);
+  }
+}
+</script>
+</body>
+</html>
