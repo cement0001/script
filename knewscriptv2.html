@@ -105,7 +105,7 @@ editor.addEventListener('keydown', (e) => {
   if(['Backspace','Delete','ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)){
     pendingKey = null; return;
   }
-  if(e.key === '\\'){
+  if(e.key === '\\' || e.key === '|'){
     e.preventDefault();
     if(pendingKey !== null){
       const mapped = backtickMap[pendingKey];
